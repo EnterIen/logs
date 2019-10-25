@@ -1,0 +1,24 @@
+mysql 同表不支持 update子查询结果,将子查询结果，再select一次，就可以了
+
+改成：UPDATE test SET state=50 WHERE num IN(SELECT * FROM (SELECT num FROM test WHERE state=60))；
+
+
+
+
+
+MYSQL中执行如下嵌套子查询时报错
+
+SELECT COUNT(c) FROM (SELECT c,COUNT(s) AS scount FROM sc GROUP BY c) WHERE scount>1
+
+报错如下：
+
+　　错误代码： 1248
+　　Every derived table must have its own alias
+
+意思是派生出来的表需要有自己的别名。
+
+解决方法： 将子查询派生的表赋予别名即可
+
+SELECT COUNT(c) FROM (SELECT c,COUNT(s) AS scount FROM sc GROUP BY c)AS temp WHERE scount>1
+
+标签: MYSQL
