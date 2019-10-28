@@ -1,0 +1,134 @@
+一道关于PHP类型转换的面试题 原
+原文发表于我的博客 http://starlight36.com/post/php-type-convert
+
+最近在为公司面试新人，经常会问到的一道题目就是PHP类型转换的值，例如：
+
+var_dump((int)true);
+var_dump((string)true);
+var_dump((string)false);
+var_dump((bool)"1");
+var_dump((bool)"0");
+var_dump((bool)"");
+var_dump((bool)"false");
+我印象中最早见到这道题目是在英极的PHP高级开发工程师岗位的笔试题里面，看似很基础，但是依然可以难住不少PHPer。先来看一下运行结果：
+
+int(1)
+string(1) "1"
+string(0) ""
+bool(true)
+bool(false)
+bool(false)
+bool(true)
+对于大多数人来说，第1、2、4行通常是没有问题的。但是为什么false转换为字符串是空字符串呢？在处理请求值时，通常会传一个字符串类型的false，但是“false”（字符串）并非false（布尔），这有点令人疑惑了。
+
+为什么会这样呢？
+
+关于这个问题，我们从PHP内核入手，看看在类型转换时系统内部到底发生了什么。
+
+首先补充一些关于PHP弱类型实现方式的背景知识。PHP解释器是使用C语言写成的，当然最终对变量的处理，也会使用C语言构造数据结构来实现。在Zend引擎中，一个PHP变量对应的类型是zval。
+
+打开Zend/zend_types.h文件，我们可以看到zval类型的定义，php-5.5.23版本大约在第55行左右：
+
+typedef struct _zval_struct zval;
+这样我们发现，zval其实是一个名为_zval_struct的结构体类型，我们在Zend/zend.h文件中找到这个结构体的定义，大约在320行左右开始：
+
+typedef union _zvalue_value {
+	long lval;					/* long value */
+	double dval;				/* double value */
+	struct {
+		char *val;
+		int len;
+	} str;
+	HashTable *ht;				/* hash table value */
+	zend_object_value obj;
+} zvalue_value;
+
+struct _zval_struct {
+	/* Variable information */
+	zvalue_value value;		/* value */
+	zend_uint refcount__gc;
+	zend_uchar type;	/* active type */
+	zend_uchar is_ref__gc;
+};
+大家可以看到，_zval_struct中包含两个重要的成员，一个是zvalue_value类型的value，一个是zend_uchar类型的type。注意zvalue_value类型是一个联合体，它用来存储一个PHP变量的值的信息。（如果你忘记了什么是联合体，我来解释一下。联合体类似结构体，但是联合体的中的成员，存储时有且只能有一个，而且联合体占用的空间是联合体中长度最长的那个成员，这样做是为了节省内存的使用。）在zvalue_value中，包括了long、double、struct、HashTable、zend_object_value五个类型的成员。他们分别用来存储PHP变量不同类型的值：
+
+C类型	PHP类型
+long	bool
+int
+resource
+double	float
+struct	string
+HashTable	array
+zend_object_value	object
+看到这个结构体之后，想必也就明白了常问的诸如PHP中int类型的取值范围，以及php中strlen的时间复杂度之类的问题。
+
+由此可见，PHP的变量类型转换，或者说是弱类型实现，本质上是实现zval类型在不同类型之间的转换。除了完成zvalue_value的数值转换，还需要将_zval_struct中的type设置成当前变量的type类型。在Zend引擎中实现了convert_to_*系列函数完成这一转换，我们在Zend/zend_operators.c中可以看到这些转换函数，在大约511行左右，可以找到转换为布尔类型的函数：
+
+ZEND_API void convert_to_boolean(zval *op) /* {{{ */
+{
+	int tmp;
+
+	switch (Z_TYPE_P(op)) {
+		case IS_BOOL:
+			break;
+		case IS_NULL:
+			Z_LVAL_P(op) = 0;
+			break;
+		case IS_RESOURCE: {
+				TSRMLS_FETCH();
+
+				zend_list_delete(Z_LVAL_P(op));
+			}
+			/* break missing intentionally */
+		case IS_LONG:
+			Z_LVAL_P(op) = (Z_LVAL_P(op) ? 1 : 0);
+			break;
+		case IS_DOUBLE:
+			Z_LVAL_P(op) = (Z_DVAL_P(op) ? 1 : 0);
+			break;
+		case IS_STRING:
+			{
+				char *strval = Z_STRVAL_P(op);
+
+				if (Z_STRLEN_P(op) == 0
+					|| (Z_STRLEN_P(op)==1 && Z_STRVAL_P(op)[0]=='0')) {
+					Z_LVAL_P(op) = 0;
+				} else {
+					Z_LVAL_P(op) = 1;
+				}
+				STR_FREE(strval);
+			}
+			break;
+		case IS_ARRAY:
+			tmp = (zend_hash_num_elements(Z_ARRVAL_P(op))?1:0);
+			zval_dtor(op);
+			Z_LVAL_P(op) = tmp;
+			break;
+		case IS_OBJECT:
+			{
+				zend_bool retval = 1;
+				TSRMLS_FETCH();
+
+				convert_object_to_type(op, IS_BOOL, convert_to_boolean);
+
+				if (Z_TYPE_P(op) == IS_BOOL) {
+					return;
+				}
+
+				zval_dtor(op);
+				ZVAL_BOOL(op, retval);
+				break;
+			}
+		default:
+			zval_dtor(op);
+			Z_LVAL_P(op) = 0;
+			break;
+	}
+	Z_TYPE_P(op) = IS_BOOL;
+}
+/* }}} */
+case IS_STRING这段代码即是将一个字符串类型变量转换为布尔型的操作。可以看到，只有空字符串，或者字符串长度为1，并且此字符为0时，字符串的布尔值才为1，也就是true，其他为0，也就是false。
+
+同样的，我们也就明白了布尔值如何转换为字符串的，可以从_convert_to_string函数的实现中了解。
+
+看似简单并且基础的PHP问题，究其根源是对PHP实现机制的把握。个人觉得，这道题也不失为鉴别PHPer知识边界的一道好题目。
