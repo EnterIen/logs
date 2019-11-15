@@ -9,6 +9,8 @@ PHP 数组函数
 
 	类型转换
 
-	安全函数
+	安全函数（htmlentities trip_tag）
 
 	获取本地远程Ip
+
+	yield
