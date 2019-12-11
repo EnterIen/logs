@@ -6,3 +6,5 @@
 # composer 最佳实践
 
 # mvc 视图引擎原理 | 构造器 ORM实现原理
+
+1. composer.json 的优先级是小于 composer.lock 的 
