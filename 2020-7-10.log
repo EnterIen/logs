@@ -2,3 +2,9 @@ normal
 
 
 SQL  N+1 问题
+
+
+Explain 分析sql
+
+
+大文件排序
