@@ -1,3 +1,6 @@
+git add remote | git set-url 
+
+
 curl
 
 traceroute
