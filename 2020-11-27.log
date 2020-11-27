@@ -1,0 +1,25 @@
+[钉钉线上培训]
+
+
+[信息管理]
+	OA
+	MIS
+	MAIL
+	Cloud
+
+
+[第一次例会]
+	讲了一下项目架构，网络 IO 模型的选择与比较：
+
+	PHP 阻塞进程多线程： PHP 本身代码执行 与 Mysql （网络 IO）与 文件读写 （磁盘 IO）之间的调度是阻塞的
+	NodeJs 单线程异步非阻塞： 请求没有立即处理完放入队列异步处理
+
+	Apache 并行  Redis 串行	Mysql 并行
+
+	Graphql 类型约束
+
+
+	【问题：】
+		Redis setnx
+
+
